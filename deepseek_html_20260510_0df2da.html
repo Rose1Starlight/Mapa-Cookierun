@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Mapa Interativo - Earthbread (Cookie Run: Kingdom)</title>
+    <!-- CSS do Leaflet (mapa base) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #1a1a1a;
+            font-family: 'Segoe UI', 'Rubik', Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .header {
+            background: #2c2118;
+            color: #ffde9c;
+            padding: 12px 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            z-index: 10;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+            letter-spacing: 1px;
+        }
+        .header h1 small {
+            font-size: 0.8rem;
+            color: #ccb38c;
+        }
+        .controls {
+            display: flex;
+            gap: 12px;
+            background: #3e2e22;
+            padding: 6px 15px;
+            border-radius: 40px;
+        }
+        .filter-btn {
+            background: none;
+            border: none;
+            color: #ffde9c;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 30px;
+            transition: all 0.2s;
+            font-size: 0.85rem;
+        }
+        .filter-btn.active {
+            background: #fa005a;
+            color: white;
+            box-shadow: 0 0 5px #fa005a;
+        }
+        .filter-btn:not(.active):hover {
+            background: #5e4332;
+        }
+        #map {
+            flex: 1;
+            width: 100%;
+            background-color: #1e0c1b;
+            z-index: 1;
+        }
+        /* Estilo customizado para os popups (igual ao estilo do wiki) */
+        .custom-popup .leaflet-popup-content-wrapper {
+            background-color: #e3d3c7;
+            color: #3a3a3a;
+            border-radius: 8px;
+            border: 1px solid #b9ada4;
+            font-family: 'Segoe UI', 'Rubik', sans-serif;
+            padding: 0;
+            box-shadow: 0 3px 14px rgba(0,0,0,0.3);
+        }
+        .custom-popup .leaflet-popup-content {
+            margin: 0;
+            min-width: 220px;
+            max-width: 280px;
+        }
+        .custom-popup .leaflet-popup-tip {
+            background: #e3d3c7;
+            border-top: 1px solid #b9ada4;
+        }
+        .marker-popup {
+            padding: 12px;
+        }
+        .marker-popup h3 {
+            font-size: 1.2rem;
+            margin: 0 0 8px 0;
+            color: #7e4c29;
+            border-bottom: 1px solid #b9ada4;
+            display: inline-block;
+        }
+        .marker-popup .description {
+            font-size: 0.85rem;
+            line-height: 1.4;
+            margin: 8px 0;
+        }
+        .marker-popup .link {
+            display: inline-block;
+            margin-top: 8px;
+            background: #604f41;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 20px;
+            text-decoration: none;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        .marker-popup .link:hover {
+            background: #9b816b;
+        }
+        .marker-popup img {
+            max-width: 100%;
+            border-radius: 6px;
+            margin-top: 8px;
+        }
+        .footer {
+            background: #2c2118;
+            color: #aa9988;
+            text-align: center;
+            font-size: 0.7rem;
+            padding: 6px;
+            z-index: 10;
+        }
+        @media (max-width: 600px) {
+            .header h1 { font-size: 1rem; }
+            .filter-btn { padding: 4px 8px; font-size: 0.7rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>🍪 Earthbread <small>Cookie Run: Kingdom</small></h1>
+    <div class="controls" id="category-filters">
+        <button data-cat="all" class="filter-btn active">🌍 Todos</button>
+        <button data-cat="1" class="filter-btn">🏰 Nações</button>
+        <button data-cat="2" class="filter-btn">🧭 Continentes</button>
+        <button data-cat="3" class="filter-btn">📍 Marcos</button>
+    </div>
+</div>
+<div id="map"></div>
+<div class="footer">
+    Mapa interativo baseado no Wiki Fandom | Clique nos marcadores para detalhes
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+    // DEFINIÇÃO DO MAPA E COORDENADAS (extraídas do arquivo original)
+    // Tamanho original da imagem: 3645 x 2576
+    const mapImage = {
+        url: "https://i.imgur.com/oargcwS.jpeg",
+        width: 3645,
+        height: 2576
+    };
+
+    // Inicializar o mapa com bounds baseados na imagem
+    const southWest = L.latLng(0, 0);
+    const northEast = L.latLng(mapImage.height, mapImage.width);
+    const bounds = L.latLngBounds(southWest, northEast);
+
+    const map = L.map('map', {
+        crs: L.CRS.Simple,
+        maxBounds: bounds,
+        minZoom: -2,
+        maxZoom: 3,
+        zoomSnap: 0.25,
+        zoomDelta: 0.5
+    });
+
+    // Adicionar a imagem de fundo do mapa
+    L.imageOverlay(mapImage.url, bounds, {
+        attribution: '&copy; Cookie Run Kingdom Wiki'
+    }).addTo(map);
+
+    // Ajustar view inicial para centralizar o mapa
+    map.fitBounds(bounds);
+    map.setZoom(1.2);
+
+    // ---- DEFINIR OS MARCADORES (baseado nos dados do arquivo) ----
+    // Cada marcador contém: categoriaId, posição [x,y], título, descrição, link, ícone (opcional, usaremos o padrão com cor por categoria)
+
+    const markersData = [
+        // === NAÇÕES (categoryId 1) ===
+        { cat:1, pos:[1657.46,1170.26], title:"Golden Cheese Kingdom", desc:"A brilhante nação do deserto fundada por Golden Cheese Cookie.", link:"https://cookierunkingdom.fandom.com/wiki/Golden_Cheese_Kingdom", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/2/21/Golden_cheese_kingdom_banner_2.png/revision/latest/scale-to-width-down/300?cb=20231112064815" },
+        { cat:1, pos:[1207.03,1161.78], title:"Vanilla Kingdom", desc:"A nação idílica fundada por Pure Vanilla Cookie.", link:"https://cookierunkingdom.fandom.com/wiki/Vanilla_Kingdom", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/3/3d/Vanilla_banner.png/revision/latest/scale-to-width-down/300?cb=20220510222501" },
+        { cat:1, pos:[2497.00,717.00], title:"Hollyberry Kingdom", desc:"A nação da selva apaixonante fundada por Hollyberry Cookie.", link:"https://cookierunkingdom.fandom.com/wiki/Hollyberry_Kingdom", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/1/15/Holly_banner.png/revision/latest/scale-to-width-down/300?cb=20221211035812" },
+        { cat:1, pos:[2335.00,1189.00], title:"Dark Cacao Kingdom", desc:"A nação fria, porém inabalável, fundada por Dark Cacao Cookie.", link:"https://cookierunkingdom.fandom.com/wiki/Dark_Cacao_Kingdom", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/2/23/Cacao_banner.png/revision/latest/scale-to-width-down/300?cb=20240225230144" },
+        { cat:1, pos:[2654.83,1549.80], title:"Faerie Kingdom", desc:"O reino estéril das fadas florais. Lar da Árvore Prateada.", link:"https://cookierunkingdom.fandom.com/wiki/Faerie_Kingdom", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/2/27/Faerie_kingdom_icon.png/revision/latest/scale-to-width-down/300?cb=20240114221406" },
+        { cat:1, pos:[680.94,920.65], title:"Crème Republic", desc:"Cidade-estado litorânea de Cookies do mar e de Vanilla.", link:"https://cookierunkingdom.fandom.com/wiki/Cr%C3%A8me_Republic", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/f/f1/Creme_Republic_Banner.jpg/revision/latest/scale-to-width-down/300?cb=20220709215558" },
+        { cat:1, pos:[2132.50,845.50], title:"Cookie Kingdom", desc:"O reino florescente de GingerBrave.", link:"https://cookierunkingdom.fandom.com/wiki/Cookie_Kingdom", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/4/49/CookieKingdomBanner.png/revision/latest/scale-to-width-down/300?cb=20221210223624" },
+        { cat:1, pos:[556.00,1299.00], title:"Tearcrown", desc:"Localização anterior do reino das Sereias Gema. Foi destruído.", link:"https://cookierunkingdom.fandom.com/wiki/Tearcrown", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/4/47/Tearcrown_Banner.png/revision/latest/scale-to-width-down/300?cb=20230811111503" },
+
+        // === CONTINENTES (categoryId 2) === Ícones diferentes
+        { cat:2, pos:[2757.84,1431.53], title:"Beast-Yeast", desc:"Terra traiçoeira de feras e magia. Lar do Reino das Fadas e das Feras Banidas.", link:"https://cookierunkingdom.fandom.com/wiki/Beast-Yeast", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/f/fa/Loading_zero_001.png/revision/latest/scale-to-width-down/300?cb=20240120085036" },
+        { cat:2, pos:[1272.00,1628.00], title:"Wholegrainia", desc:"Pouco se sabe sobre este continente noroeste.", link:"", img:"" },
+        { cat:2, pos:[1180.00,808.00], title:"Candystick Archipelago", desc:"Conjunto de ilhas que contém as Ilhas Soda Tropicais e a República Crème.", link:"", img:"" },
+        { cat:2, pos:[2084.00,1064.00], title:"Crispia", desc:"O continente mais notável de Earthbread, com a maioria dos reinos.", link:"", img:"" },
+        { cat:2, pos:[2204.00,1672.00], title:"Sugarberg", desc:"Pouco se sabe sobre este continente do norte.", link:"", img:"" },
+
+        // === MARCOS / LANDMARKS (categoryId 3) ===
+        { cat:3, pos:[2726.00,800.00], title:"City of Wizards", desc:"Local de descanso final dos grandes magos. Guardada por Moonlight Cookie.", link:"https://cookierunkingdom.fandom.com/wiki/City_of_Wizards", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/8/8d/Eternal_city_of_wizards_cutscene_moonlight_sleeping.jpg/revision/latest/scale-to-width-down/300?cb=20230326030200" },
+        { cat:3, pos:[1672.00,818.00], title:"Tropical Soda Islands", desc:"Ilhas tropicais, local de nascimento dos Dragões lendários.", link:"https://cookierunkingdom.fandom.com/wiki/Tropical_Soda_Islands", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/d/d3/Tropical_soda_islands_cutscene_11.png/revision/latest/scale-to-width-down/300?cb=20241130213659" },
+        { cat:3, pos:[2947.22,729.03], title:"Tower of Frozen Waves", desc:"Monumento de gelo representando a saudade de Sea Fairy pela lua.", link:"https://cookierunkingdom.fandom.com/wiki/Tower_of_Frozen_Waves", img:"" },
+        { cat:3, pos:[2606.00,901.50], title:"Dragon's Valley", desc:"Vale de vulcões em chamas e dragões. Lar de Pitaya Dragon.", link:"https://cookierunkingdom.fandom.com/wiki/Dragon%27s_Valley", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/a/a9/CRK_Promo_Art_Dragon%27s_Valley_Update_Teaser.jpg/revision/latest/scale-to-width-down/300?cb=20230619112539" },
+        { cat:3, pos:[902.27,1549.98], title:"Parfaedia", desc:"Cidade de fantasia urbana de magos e feiticeiros.", link:"https://cookierunkingdom.fandom.com/wiki/Parfaedia", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/f/f7/Parfaediabanner.jpg/revision/latest/scale-to-width-down/300?cb=20220506192707" },
+        { cat:3, pos:[708.52,896.61], title:"Crème Knights Paladin Academy", desc:"Instituição dedicada a formar guerreiros sagrados.", link:"https://cookierunkingdom.fandom.com/wiki/Paladin_Academy", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/a/a6/Odyssey_paladin_academy.png/revision/latest/scale-to-width-down/300?cb=20221101053449" },
+        { cat:3, pos:[937.98,1549.62], title:"Parfaedia Institute", desc:"Academia de jovens magos e fabricantes de poções.", link:"https://cookierunkingdom.fandom.com/wiki/Parfaedia_Institute", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/7/78/Parfaedia_institute_classroom.png/revision/latest/scale-to-width-down/300?cb=20220428025008" },
+        { cat:3, pos:[2581.00,783.00], title:"Dragon City", desc:"Cidade estilo medieval fantasia cheia de caçadores de dragões.", link:"https://cookierunkingdom.fandom.com/wiki/Category:Dragon_City_Residents", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/7/74/Special_episode01_dragon_city_07.png/revision/latest/scale-to-width-down/300?cb=20231001035432" },
+        { cat:3, pos:[2649.53,901.21], title:"Scovillia", desc:"Uma civilização com uma escola de estudantes apimentados.", link:"https://cookierunkingdom.fandom.com/wiki/Scovillia", img:"" },
+        { cat:3, pos:[2222.52,1002.76], title:"Tower of Sweet Chaos", desc:"Pira blasfema de chama contaminada e Monstros de Bolo.", link:"https://cookierunkingdom.fandom.com/wiki/Tower_of_Sweet_Chaos", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/9/9d/Tower_of_Sweet_Chaos_Visual_8.PNG/revision/latest/scale-to-width-down/300?cb=20210605222928" },
+        { cat:3, pos:[526.00,1299.00], title:"Duskgloom Sea", desc:"Área abissal do Oceano Silencioso governada por Black Pearl Cookie.", link:"https://cookierunkingdom.fandom.com/wiki/Duskgloom_Sea", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/6/68/Explore_the_black_Pearl_islands_visual_12.jpeg/revision/latest/scale-to-width-down/300?cb=20220918210442" },
+        { cat:3, pos:[2035.05,1397.95], title:"Snowfall Village", desc:"Povoado aconchegante coberto de neve. Lar de Cotton Cookie.", link:"https://cookierunkingdom.fandom.com/wiki/Snowfall_Village", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/a/a8/Lantern_in_the_snow_snowfall_village.png/revision/latest/scale-to-width-down/300?cb=20221227215222" },
+        { cat:3, pos:[2690.23,1247.94], title:"Ivory Pagoda", desc:"Grande templo de Mystic Flour Cookie, epicentro da apatia.", link:"", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/2/2c/Cloud_haetae_gacha_background.jpg/revision/latest/scale-to-width-down/300?cb=20240604171709" },
+        { cat:3, pos:[2975.86,1248.40], title:"Cookie Laboratorium", desc:"Facilidade onde Cookies das Trevas fazem experimentos com massa.", link:"https://cookierunkingdom.fandom.com/wiki/The_Cookie_Laboratorium", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/5/53/Butter_roll_gacha_background.jpg/revision/latest/scale-to-width-down/300?cb=20240313165405" },
+        { cat:3, pos:[2105.06,845.70], title:"Cuckoo Town Square", desc:"Ponto movimentado com vendedores diversos e MyCookies visitantes.", link:"https://cookierunkingdom.fandom.com/wiki/Cuckoo_Town_Square", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/c/ce/Cuckoo_town_square_cutscene_background_1.png/revision/latest/scale-to-width-down/300?cb=20240407204549" },
+        { cat:3, pos:[2505.00,1375.00], title:"Licorice Sea", desc:"Mar de lama negra viva que cerca o Reino do Dark Cacao.", link:"", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/e/e8/Snow_on_the_black_wall_cutscene_9.jpg/revision/latest/scale-to-width-down/300?cb=20240920224755" },
+        { cat:3, pos:[2295.98,1124.30], title:"Sublime Cake Tower", desc:"Torre recém-nascida de enxofre e produtos de confeitaria malignos.", link:"https://cookierunkingdom.fandom.com/wiki/Sublime_Cake_Tower", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/a/ab/CRK_Promo_Art_Decadent_Choco_Cake_Tower.jpg/revision/latest/scale-to-width-down/300?cb=20240425030648" },
+        { cat:3, pos:[2210.00,721.50], title:"The Witch's House", desc:"Lar da Bruxa que cozinhou muitos Cookies, incluindo GingerBrave.", link:"", img:"" },
+        { cat:3, pos:[1533.00,1724.00], title:"Sugar-Free Road", desc:"O caminho que Pure Vanilla peregrinou no início de sua vida.", link:"", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/f/fd/Heros_gate_cutscene_1.png/revision/latest/scale-to-width-down/300?cb=20211016184623" },
+        { cat:3, pos:[3224.32,1516.80], title:"Land of Spices", desc:"Terras arrasadas pela guerra de Burning Spice Cookie.", link:"https://cookierunkingdom.fandom.com/wiki/Land_of_Spices", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/2/20/Fx_cutscene_beast_episode05_04_bg.png/revision/latest/scale-to-width-down/300?cb=20241005175317" },
+        { cat:3, pos:[2920.36,1426.99], title:"Spire of Deceit", desc:"Reino de irrealidade de Shadow Milk Cookie.", link:"https://cookierunkingdom.fandom.com/wiki/Spire_of_Deceit", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/2/21/Cutscene_beast_episode07_014.png/revision/latest/scale-to-width-down/300?cb=20250119002741" },
+        { cat:3, pos:[3255.70,1336.16], title:"Garden of Delights", desc:"Paraíso sacarino de Eternal Sugar Cookie.", link:"", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/4/40/Cutscene_beast_episode09_05.png/revision/latest/scale-to-width-down/300?cb=20250507192644" },
+        { cat:3, pos:[2971.28,1545.07], title:"Land of Silence", desc:"Planícies de solo morto e catacumbas de Silent Salt Cookie.", link:"https://cookierunkingdom.fandom.com/wiki/Land_of_Silence", img:"https://static.wikia.nocookie.net/cookierunkingdom/images/3/34/Cutscene_beast_episode11_01.png/revision/latest/scale-to-width-down/300?cb=20250926035403" }
+    ];
+
+    // Ícones customizados para cada categoria (usando emojis + cor de fundo via div)
+    function getIconForCategory(catId) {
+        let color, emoji;
+        if (catId === 1) { color = "#fff6e3"; emoji = "🏰"; }      // Nações
+        else if (catId === 2) { color = "#fa005a"; emoji = "🧭"; }  // Continentes
+        else { color = "#fa005a"; emoji = "📍"; }                    // Landmarks
+        // Criar ícone em formato de div estilizada (mais leve que imagem externa)
+        return L.divIcon({
+            html: `<div style="background-color: ${color}; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 18px;">${emoji}</div>`,
+            iconSize: [32, 32],
+            popupAnchor: [0, -16],
+            className: 'custom-marker'
+        });
+    }
+
+    // Armazenar markers para filtragem
+    const markersLayer = {};
+
+    // Função para criar popup HTML
+    function createPopupContent(data) {
+        let imgHtml = '';
+        if (data.img && data.img !== "") {
+            imgHtml = `<img src="${data.img}" alt="${data.title}" style="max-width:100%; border-radius:6px; margin-top:8px;">`;
+        }
+        let linkHtml = '';
+        if (data.link && data.link !== "") {
+            linkHtml = `<a href="${data.link}" target="_blank" class="link">📖 Ver no Wiki</a>`;
+        } else {
+            linkHtml = `<span class="link" style="background:#888; cursor:default;">ℹ️ Apenas referência</span>`;
+        }
+        return `<div class="marker-popup">
+                    <h3>${emojiForCat(data.cat)} ${data.title}</h3>
+                    <div class="description">${data.desc}</div>
+                    ${linkHtml}
+                    ${imgHtml}
+                </div>`;
+    }
+
+    function emojiForCat(cat) {
+        if (cat === 1) return "🏰";
+        if (cat === 2) return "🧭";
+        return "📍";
+    }
+
+    // Adicionar todos os marcadores ao mapa
+    markersData.forEach(m => {
+        const icon = getIconForCategory(m.cat);
+        const popupContent = createPopupContent(m);
+        // Coordenadas: [y, x] porque no Leaflet Simple CRS usamos (lat=y, lng=x)
+        const marker = L.marker([m.pos[1], m.pos[0]], { icon: icon }).addTo(map);
+        marker.bindPopup(popupContent, { className: 'custom-popup', maxWidth: 280 });
+        // Guardar referência para filtro
+        markersLayer[m.title] = { marker, category: m.cat };
+    });
+
+    // --- SISTEMA DE FILTROS ---
+    const filterButtons = document.querySelectorAll('.filter-btn');
+    function filterMarkersByCategory(categoryId) {
+        // categoryId pode ser "all", "1", "2", "3"
+        for (let key in markersLayer) {
+            const item = markersLayer[key];
+            if (categoryId === 'all' || item.category === parseInt(categoryId)) {
+                if (!map.hasLayer(item.marker)) map.addLayer(item.marker);
+            } else {
+                if (map.hasLayer(item.marker)) map.removeLayer(item.marker);
+            }
+        }
+    }
+
+    filterButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            // atualizar estilo ativo
+            filterButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const cat = btn.getAttribute('data-cat');
+            filterMarkersByCategory(cat);
+        });
+    });
+
+    // Mensagem de carregamento concluído
+    console.log("Mapa Earthbread carregado com sucesso!");
+</script>
+</body>
+</html>
